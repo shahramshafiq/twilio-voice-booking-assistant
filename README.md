@@ -8,7 +8,7 @@ A voice receptionist that books, looks up, moves and cancels appointments in Goo
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)
 ![OpenAI](https://img.shields.io/badge/OpenAI-gpt--4.1--mini-412991?style=flat-square&logo=openai&logoColor=white)
 ![Google Calendar](https://img.shields.io/badge/Google%20Calendar-API%20v3-4285F4?style=flat-square&logo=googlecalendar&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-146%20passing-brightgreen?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-147%20passing-brightgreen?style=flat-square)
 
 </div>
 
@@ -71,7 +71,7 @@ voice-booking-assistant/
   prompts/               System prompt template
   scripts/               check_calendar.py (free Google Calendar check)
   static/                Web page, audio worklets, styles
-  tests/                 146 tests with fake services
+  tests/                 147 tests with fake services
 ```
 
 ## Getting Started
@@ -319,7 +319,7 @@ When the page opens, the app makes the sound of the short "Okay." and "Alright."
 python -m pytest
 ```
 
-The 146 tests use fake Twilio messages, a fake Google Calendar, fake Deepgram and ElevenLabs connections and a scripted model, so they need no service keys and make no paid calls. They cover TwiML, webhook signatures, audio conversion, stream events, call isolation, cleanup, date parsing, booking rules, guardrails and whole conversations.
+The 147 tests use fake Twilio messages, a fake Google Calendar, fake Deepgram and ElevenLabs connections and a scripted model, so they need no service keys and make no paid calls. They cover TwiML, webhook signatures, audio conversion, stream events, call isolation, cleanup, date parsing, booking rules, guardrails and whole conversations.
 
 ## Limitations and Roadmap
 
