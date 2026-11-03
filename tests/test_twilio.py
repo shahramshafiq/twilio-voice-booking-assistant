@@ -253,9 +253,10 @@ def test_media_stream_rejects_unexpected_audio_format(monkeypatch):
     invalid = _start_event("CA111", "MZ111")
     invalid["start"]["mediaFormat"]["encoding"] = "audio/linear16"
     with TestClient(api) as client:
-        with pytest.raises(WebSocketDisconnect):
-            with client.websocket_connect(
-                "/twilio/media-stream", headers={"x-twilio-signature": "test"}
-            ) as websocket:
-                websocket.send_json({"event": "connected", "protocol": "Call"})
-                websocket.send_json(invalid)
+        with client.websocket_connect(
+            "/twilio/media-stream", headers={"x-twilio-signature": "test"}
+        ) as websocket:
+            websocket.send_json({"event": "connected", "protocol": "Call"})
+            websocket.send_json(invalid)
+            with pytest.raises(WebSocketDisconnect):
+                websocket.receive_text()
