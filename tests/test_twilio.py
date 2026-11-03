@@ -270,6 +270,21 @@ def test_the_call_is_ended_only_after_twilio_has_played_the_goodbye(monkeypatch)
     assert socket.closed  # Twilio then says the fallback sentence and hangs up
 
 
+def test_a_phone_call_is_not_left_silent_when_the_conversation_stops_by_itself():
+    socket = FakeTwilioSocket()
+    transport = TwilioCallTransport(socket, "CA111", "MZ111", settings, ACCOUNT_SID)
+    run(transport.send_json({"type": "state", "value": "listening"}))
+    assert not socket.closed
+    run(transport.send_json({"type": "state", "value": "idle"}))  # for example Deepgram was lost
+    assert socket.closed
+
+    socket = FakeTwilioSocket()
+    transport = TwilioCallTransport(socket, "CA111", "MZ111", settings, ACCOUNT_SID)
+    transport.offer_disconnect()  # the caller hung up: the clean-up that follows must not close it again
+    run(transport.send_json({"type": "state", "value": "idle"}))
+    assert not socket.closed
+
+
 class SessionProbe:
     instances = []
 

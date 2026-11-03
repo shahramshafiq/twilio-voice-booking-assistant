@@ -170,6 +170,11 @@ class TwilioCallTransport:
             async with self.send_lock:
                 if not self.closed:
                     await self._send_locked({"event": "mark", "streamSid": self.stream_sid, "mark": {"name": _HANG_UP_MARK}})
+        elif kind == "state" and event.get("value") == "idle" and not self.closed:
+            # the conversation stopped by itself (speech recognition lost, a failed start) and a phone has no
+            # Start button, so the line would stay silent: close the stream so Twilio says the fallback and hangs up
+            log.warning("the conversation on call %s stopped, ending the call", self.call_sid)
+            await self._close_stream()
 
     async def hang_up(self):
         """End the call. If the REST request fails, close the stream instead: Twilio then says the TwiML
@@ -180,10 +185,13 @@ class TwilioCallTransport:
         except Exception as exc:
             log.warning("could not end call %s through the REST API (%s: %s), closing the stream instead",
                         self.call_sid, type(exc).__name__, exc)
-            try:
-                await self.websocket.close()
-            except Exception as close_error:
-                log.warning("could not close the stream of call %s: %s", self.call_sid, type(close_error).__name__)
+            await self._close_stream()
+
+    async def _close_stream(self):
+        try:
+            await self.websocket.close()
+        except Exception as exc:
+            log.warning("could not close the stream of call %s: %s", self.call_sid, type(exc).__name__)
 
     def receive_mark(self, event):
         name = (event.get("mark") or {}).get("name")
