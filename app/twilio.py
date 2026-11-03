@@ -137,6 +137,12 @@ class TwilioCallTransport:
         elif kind == "transcript_final":
             self.suppress_audio = False
         elif kind == "audio_end":
+            if self.suppress_audio:
+                self.converter.discard_outgoing()
+                self.started_generation = None
+                self.output_bytes = 0
+                self.bytes_since_mark = 0
+                return
             tail = self.converter.finish_outgoing()
             async with self.send_lock:
                 if self.closed:
