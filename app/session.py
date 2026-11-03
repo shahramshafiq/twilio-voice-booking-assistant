@@ -15,7 +15,7 @@ Messages from the browser:
 Messages to the browser:
   binary                      the reply audio (16-bit PCM, mono)
   JSON events: config, ready, state, user_speaking, transcript_interim, transcript_final,
-               assistant_text, tool, audio_end, clear, interrupted, metrics, warning, error, idle_timeout
+               assistant_text, tool, audio_start, audio_end, clear, interrupted, metrics, warning, error, idle_timeout
 """
 import asyncio
 import json
@@ -180,8 +180,13 @@ class VoiceSession:
         self._ack_count += 1
         log.info("said %r: you went quiet and Deepgram has not finished the turn yet (it is %s ms behind)", phrase,
                  self.stt.behind_ms if self.stt else "?")
+        await self._play_sound(sound)
+
+    async def _play_sound(self, sound):
+        """Play a ready-made sound that is not a reply to a turn, for example the "Okay." acknowledgement."""
+        await self.send_event({"type": "audio_start"})  # a phone line drops audio after a barge-in until it sees this
         await self.send_audio(sound)
-        await self.send_event({"type": "audio_end", "transient": True})  # this acknowledgement is not the end of a reply
+        await self.send_event({"type": "audio_end", "transient": True})  # this is not the end of a reply
 
     async def _on_control(self, message):
         kind = message.get("type")

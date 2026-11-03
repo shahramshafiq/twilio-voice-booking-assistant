@@ -186,6 +186,20 @@ def test_clear_discards_late_audio_until_the_next_user_turn():
     assert any(message["event"] == "media" for message in socket.sent)
 
 
+def test_a_listening_acknowledgement_still_plays_after_a_barge_in():
+    socket = FakeTwilioSocket()
+    transport = TwilioCallTransport(socket, "CA111", "MZ111", settings)
+
+    async def scenario():
+        await transport.send_json({"type": "clear"})
+        await transport.send_json({"type": "audio_start"})
+        await transport.send_bytes(np.zeros(3200, dtype="<i2").tobytes())
+        await transport.send_json({"type": "audio_end", "transient": True})
+
+    run(scenario())
+    assert [message["event"] for message in socket.sent][:2] == ["clear", "media"]
+
+
 class SessionProbe:
     instances = []
 

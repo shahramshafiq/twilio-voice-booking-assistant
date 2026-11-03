@@ -134,8 +134,8 @@ class TwilioCallTransport:
             if not self.closed:
                 async with self.send_lock:
                     await self._send_locked({"event": "clear", "streamSid": self.stream_sid})
-        elif kind == "transcript_final":
-            self.suppress_audio = False
+        elif kind in ("transcript_final", "audio_start"):
+            self.suppress_audio = False  # a new caller turn, or a ready-made sound such as "Okay."
         elif kind == "audio_end":
             if self.suppress_audio:
                 self.converter.discard_outgoing()

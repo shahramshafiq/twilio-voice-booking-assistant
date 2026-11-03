@@ -582,7 +582,7 @@ def test_a_short_okay_is_said_when_the_caller_went_quiet_but_deepgram_is_still_b
         assert bench.socket.audio == b""
         await feed(session, quiet, 2)  # 1.6 s: Deepgram is still busy, so "Okay." is played at once
         heard = len(bench.socket.audio)
-        assert heard > 0 and bench.socket.of_type("audio_end")
+        assert heard > 0 and bench.socket.of_type("audio_start") and bench.socket.of_type("audio_end")
         await feed(session, quiet, 25)
         assert len(bench.socket.audio) == heard  # only once per pause
 
