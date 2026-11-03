@@ -302,6 +302,8 @@ class Settings:
     twilio_phone_number: str
     twilio_public_base_url: str
     phone_greeting: str  # empty = no greeting
+    phone_goodbye: str  # said before a silent phone call is ended
+    twilio_api_timeout_seconds: float
 
 
 def load_settings():
@@ -458,6 +460,8 @@ def load_settings():
         twilio_phone_number=r.optional_text("TWILIO_PHONE_NUMBER"),
         twilio_public_base_url=r.optional_text("TWILIO_PUBLIC_BASE_URL").rstrip("/"),
         phone_greeting=r.text("PHONE_GREETING"),
+        phone_goodbye=r.text("PHONE_GOODBYE"),
+        twilio_api_timeout_seconds=r.number("TWILIO_API_TIMEOUT_SECONDS"),
     )
 
     # extra sanity checks, only once every value was read without problems

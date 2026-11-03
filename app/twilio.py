@@ -9,7 +9,9 @@ from urllib.parse import parse_qsl, urlsplit
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response
+from twilio.http.http_client import TwilioHttpClient
 from twilio.request_validator import RequestValidator
+from twilio.rest import Client
 from twilio.twiml.voice_response import VoiceResponse
 
 from .config import settings
@@ -22,6 +24,7 @@ router = APIRouter()
 _MEDIA_FRAME_BYTES = 160  # 20 ms of mu-law at 8 kHz
 _MARK_INTERVAL_BYTES = 800  # playback progress every 100 ms
 _MAX_MEDIA_PAYLOAD_CHARS = 65536
+_HANG_UP_MARK = "hang-up"  # Twilio returns it once everything sent before it has been played
 
 
 def _public_origin(configured_url):
@@ -69,13 +72,22 @@ def build_twiml(stream_url):
     return str(response)
 
 
+def _end_call(account_sid, call_sid, config):
+    """Ask Twilio's REST API to end the call. This request blocks, so it runs in a thread."""
+    http_client = TwilioHttpClient(timeout=config.twilio_api_timeout_seconds)
+    Client(account_sid, config.twilio_auth_token, http_client=http_client).calls(call_sid).update(status="completed")
+
+
 class TwilioCallTransport:
     """Expose a Twilio Media Stream as the small WebSocket interface VoiceSession already uses."""
 
-    def __init__(self, websocket, call_sid, stream_sid, config):
+    def __init__(self, websocket, call_sid, stream_sid, config, account_sid):
         self.websocket = websocket
         self.call_sid = call_sid
         self.stream_sid = stream_sid
+        self.config = config
+        self.account_sid = account_sid
+        self.hang_up_task = None
         self.converter = TwilioAudioConverter(config.deepgram_sample_rate, config.tts_sample_rate)
         self.incoming = asyncio.Queue()
         self.send_lock = asyncio.Lock()
@@ -152,9 +164,32 @@ class TwilioCallTransport:
                 self.started_generation = None
                 self.output_bytes = 0
                 self.bytes_since_mark = 0
+        elif kind == "idle_timeout":
+            # the goodbye was sent just before this: the call ends when Twilio returns the mark after it
+            async with self.send_lock:
+                if not self.closed:
+                    await self._send_locked({"event": "mark", "streamSid": self.stream_sid, "mark": {"name": _HANG_UP_MARK}})
+
+    async def hang_up(self):
+        """End the call. If the REST request fails, close the stream instead: Twilio then says the TwiML
+        fallback sentence and hangs up."""
+        try:
+            await asyncio.to_thread(_end_call, self.account_sid, self.call_sid, self.config)
+            log.info("hung up call %s", self.call_sid)
+        except Exception as exc:
+            log.warning("could not end call %s through the REST API (%s: %s), closing the stream instead",
+                        self.call_sid, type(exc).__name__, exc)
+            try:
+                await self.websocket.close()
+            except Exception as close_error:
+                log.warning("could not close the stream of call %s: %s", self.call_sid, type(close_error).__name__)
 
     def receive_mark(self, event):
         name = (event.get("mark") or {}).get("name")
+        if name == _HANG_UP_MARK:
+            if self.hang_up_task is None:
+                self.hang_up_task = asyncio.create_task(self.hang_up())
+            return
         marker = self.marks.pop(name, None) if isinstance(name, str) else None
         if marker is None:
             return
@@ -240,7 +275,7 @@ def _valid_start(event, config):
         or media_format.get("channels") != 1
     ):
         return None
-    return call_sid, stream_sid
+    return call_sid, stream_sid, account_sid
 
 
 @router.post("/twilio/incoming")
@@ -306,7 +341,7 @@ async def media_stream(websocket: WebSocket):
         if call_info is None:
             await _close_reason(websocket)
             return
-        call_sid, stream_sid = call_info
+        call_sid, stream_sid, account_sid = call_info
         if call_sid in active_calls:
             await _close_reason(websocket, reason="A stream for this call is already active")
             return
@@ -315,7 +350,7 @@ async def media_stream(websocket: WebSocket):
             return
 
         state = websocket.app.state
-        transport = TwilioCallTransport(websocket, call_sid, stream_sid, settings)
+        transport = TwilioCallTransport(websocket, call_sid, stream_sid, settings, account_sid)
         session = VoiceSession(
             transport,
             settings,

@@ -137,14 +137,18 @@ def test_mulaw_codec_and_resampling_preserve_audio_length():
 class FakeTwilioSocket:
     def __init__(self):
         self.sent = []
+        self.closed = False
 
     async def send_text(self, message):
         self.sent.append(json.loads(message))
 
+    async def close(self, code=1000, reason=None):
+        self.closed = True
+
 
 def test_outgoing_audio_is_packetized_and_mark_ack_reports_playback():
     socket = FakeTwilioSocket()
-    transport = TwilioCallTransport(socket, "CA111", "MZ111", settings)
+    transport = TwilioCallTransport(socket, "CA111", "MZ111", settings, ACCOUNT_SID)
 
     async def scenario():
         await transport.send_bytes(np.zeros(3200, dtype="<i2").tobytes())
@@ -170,7 +174,7 @@ def test_outgoing_audio_is_packetized_and_mark_ack_reports_playback():
 
 def test_clear_discards_late_audio_until_the_next_user_turn():
     socket = FakeTwilioSocket()
-    transport = TwilioCallTransport(socket, "CA111", "MZ111", settings)
+    transport = TwilioCallTransport(socket, "CA111", "MZ111", settings, ACCOUNT_SID)
     pcm = np.zeros(3200, dtype="<i2").tobytes()
 
     async def scenario():
@@ -189,7 +193,7 @@ def test_clear_discards_late_audio_until_the_next_user_turn():
 
 def test_a_listening_acknowledgement_still_plays_after_a_barge_in():
     socket = FakeTwilioSocket()
-    transport = TwilioCallTransport(socket, "CA111", "MZ111", settings)
+    transport = TwilioCallTransport(socket, "CA111", "MZ111", settings, ACCOUNT_SID)
 
     async def scenario():
         await transport.send_json({"type": "clear"})
@@ -219,6 +223,51 @@ def test_a_phone_call_is_greeted_as_soon_as_it_listens_and_the_browser_is_not(mo
         await browser.stop()
 
     run(scenario())
+
+
+def test_a_silent_phone_call_says_goodbye_and_is_not_stopped_under_it(monkeypatch):
+    real_sleep = asyncio.sleep
+    # the idle watchdog looks every 5 s; here it looks at once
+    monkeypatch.setattr(asyncio, "sleep", lambda seconds, *args: real_sleep(0 if seconds >= 5 else seconds))
+
+    async def scenario():
+        bench = Bench(monkeypatch, ScriptedLLM())
+        await bench.session._on_control({"type": "start", "phone": True})
+        await real_sleep(0.05)
+        greeting_bytes = len(bench.socket.audio)
+        bench.session.last_activity -= settings.idle_timeout_seconds + 1
+        await real_sleep(0.05)
+        kinds = [event["type"] for event in bench.socket.events]
+        assert kinds[-3:] == ["audio_start", "audio_end", "idle_timeout"]
+        assert len(bench.socket.audio) > greeting_bytes  # the goodbye
+        assert "clear" not in kinds and bench.session.state == "listening"  # nothing cuts the goodbye off
+        await bench.stop()
+
+    run(scenario())
+
+
+def test_the_call_is_ended_only_after_twilio_has_played_the_goodbye(monkeypatch):
+    ended = []
+    monkeypatch.setattr(twilio_module, "_end_call", lambda account_sid, call_sid, config: ended.append((account_sid, call_sid)))
+    socket = FakeTwilioSocket()
+    transport = TwilioCallTransport(socket, "CA111", "MZ111", settings, ACCOUNT_SID)
+
+    async def scenario():
+        await transport.send_json({"type": "idle_timeout"})
+        assert socket.sent[-1] == {"event": "mark", "streamSid": "MZ111", "mark": {"name": "hang-up"}}
+        assert ended == []
+        transport.receive_mark({"event": "mark", "streamSid": "MZ111", "mark": {"name": "hang-up"}})
+        await transport.hang_up_task
+
+    run(scenario())
+    assert ended == [(ACCOUNT_SID, "CA111")] and not socket.closed
+
+    def fail(*args):
+        raise RuntimeError("Twilio cannot be reached")
+
+    monkeypatch.setattr(twilio_module, "_end_call", fail)
+    run(transport.hang_up())
+    assert socket.closed  # Twilio then says the fallback sentence and hangs up
 
 
 class SessionProbe:
@@ -291,6 +340,7 @@ def test_media_stream_creates_isolated_voice_sessions_and_cleans_up(monkeypatch)
     assert first_session.transport is not second_session.transport
     assert json.loads(first_session.messages[0]["text"]) == {"type": "start", "phone": True}
     assert first_session.transport.call_sid == "CA111"
+    assert first_session.transport.account_sid == ACCOUNT_SID
     assert second_session.transport.call_sid == "CA222"
     assert first_session.transport.stream_sid == "MZ111"
     assert second_session.transport.stream_sid == "MZ222"

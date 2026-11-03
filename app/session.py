@@ -361,7 +361,13 @@ class VoiceSession:
             await asyncio.sleep(5)
             idle_for = time.monotonic() - self.last_activity
             if self.state == "listening" and idle_for > self.settings.idle_timeout_seconds:
-                log.info("no activity for %.0f s, stopping", idle_for)
+                log.info("no activity for %.0f s, ending the conversation", idle_for)
+                if self.on_phone:
+                    # nobody can press Start on a phone: say goodbye, and the phone line hangs up once it is heard
+                    # (no stop here, its "clear" would cut the goodbye off; the hang-up closes everything)
+                    await self._say(self.settings.phone_goodbye)
+                    await self.send_event({"type": "idle_timeout"})
+                    return
                 await self.send_event({"type": "idle_timeout"})
                 self._spawn(self._stop_pipeline())
                 return
