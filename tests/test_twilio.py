@@ -167,6 +167,25 @@ def test_outgoing_audio_is_packetized_and_mark_ack_reports_playback():
     assert controls[2]["type"] == "playback_drained"
 
 
+def test_clear_discards_late_audio_until_the_next_user_turn():
+    socket = FakeTwilioSocket()
+    transport = TwilioCallTransport(socket, "CA111", "MZ111", settings)
+    pcm = np.zeros(3200, dtype="<i2").tobytes()
+
+    async def scenario():
+        await transport.send_json({"type": "clear"})
+        await transport.send_bytes(pcm)
+        await transport.send_json({"type": "audio_end", "transient": True})
+        events_after_clear = [message["event"] for message in socket.sent]
+        await transport.send_json({"type": "transcript_final", "text": "next turn"})
+        await transport.send_bytes(pcm)
+        return events_after_clear
+
+    events_after_clear = run(scenario())
+    assert events_after_clear == ["clear"]
+    assert any(message["event"] == "media" for message in socket.sent)
+
+
 class SessionProbe:
     instances = []
 
