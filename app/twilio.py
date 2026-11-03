@@ -85,6 +85,7 @@ class TwilioCallTransport:
         self.output_bytes = 0
         self.bytes_since_mark = 0
         self.marks = {}
+        self.suppress_audio = False
 
     async def receive(self):
         return await self.incoming.get()
@@ -103,11 +104,14 @@ class TwilioCallTransport:
             self.incoming.put_nowait({"type": "websocket.disconnect", "code": 1000})
 
     async def send_bytes(self, pcm_audio):
+        if self.closed or self.suppress_audio:
+            return
+        generation = self.generation
         mulaw_audio = self.converter.encode_outgoing(pcm_audio)
         if not mulaw_audio or self.closed:
             return
         async with self.send_lock:
-            if self.closed:
+            if self.closed or self.suppress_audio or generation != self.generation:
                 return
             for offset in range(0, len(mulaw_audio), _MEDIA_FRAME_BYTES):
                 frame = mulaw_audio[offset:offset + _MEDIA_FRAME_BYTES]
@@ -120,6 +124,7 @@ class TwilioCallTransport:
     async def send_json(self, event):
         kind = event.get("type")
         if kind == "clear":
+            self.suppress_audio = True
             self.generation += 1
             self.started_generation = None
             self.output_bytes = 0
@@ -129,6 +134,8 @@ class TwilioCallTransport:
             if not self.closed:
                 async with self.send_lock:
                     await self._send_locked({"event": "clear", "streamSid": self.stream_sid})
+        elif kind == "transcript_final":
+            self.suppress_audio = False
         elif kind == "audio_end":
             tail = self.converter.finish_outgoing()
             async with self.send_lock:
