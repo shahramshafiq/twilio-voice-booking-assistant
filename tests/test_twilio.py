@@ -16,6 +16,7 @@ import app.twilio as twilio_module
 from app.config import settings
 from app.twilio import TwilioCallTransport, build_twiml
 from app.twilio_audio import TwilioAudioConverter, mulaw_to_pcm16, pcm16_to_mulaw
+from tests.test_pipeline import NOW, Bench, ScriptedLLM
 
 AUTH_TOKEN = "twilio-test-auth-token"
 ORIGIN = "https://voice.example.test"
@@ -200,6 +201,26 @@ def test_a_listening_acknowledgement_still_plays_after_a_barge_in():
     assert [message["event"] for message in socket.sent][:2] == ["clear", "media"]
 
 
+def test_a_phone_call_is_greeted_as_soon_as_it_listens_and_the_browser_is_not(monkeypatch):
+    async def scenario():
+        phone = Bench(monkeypatch, ScriptedLLM())
+        await phone.session._on_control({"type": "start", "phone": True})
+        await asyncio.sleep(0.05)
+        assert phone.socket.audio and phone.socket.of_type("audio_start")
+        assert phone.socket.of_type("audio_end")[-1] == {"type": "audio_end", "transient": True}
+        assert settings.phone_greeting in phone.session.memory.render_state(NOW, settings.business_timezone)
+        await phone.stop()
+
+        browser = Bench(monkeypatch, ScriptedLLM())
+        await browser.start()
+        await asyncio.sleep(0.05)
+        assert browser.socket.audio == b""
+        assert settings.phone_greeting not in browser.session.memory.render_state(NOW, settings.business_timezone)
+        await browser.stop()
+
+    run(scenario())
+
+
 class SessionProbe:
     instances = []
 
@@ -268,6 +289,7 @@ def test_media_stream_creates_isolated_voice_sessions_and_cleans_up(monkeypatch)
     assert len(SessionProbe.instances) == 2
     first_session, second_session = SessionProbe.instances
     assert first_session.transport is not second_session.transport
+    assert json.loads(first_session.messages[0]["text"]) == {"type": "start", "phone": True}
     assert first_session.transport.call_sid == "CA111"
     assert second_session.transport.call_sid == "CA222"
     assert first_session.transport.stream_sid == "MZ111"

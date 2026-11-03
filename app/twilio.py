@@ -327,7 +327,7 @@ async def media_stream(websocket: WebSocket):
         )
         active_calls[call_sid] = session
         session_task = asyncio.create_task(session.run())
-        transport.offer_control({"type": "start"})
+        transport.offer_control({"type": "start", "phone": True})
         log.info("Twilio call %s stream %s connected", call_sid, stream_sid)
 
         while not session_task.done():

@@ -6,7 +6,7 @@ keeps the browser informed with small JSON events. It also owns the short-term m
 
 Messages from the browser:
   binary                      microphone audio (16-bit PCM, mono)
-  {"type": "start"}           begin the conversation
+  {"type": "start"}           begin the conversation ("phone": true when it comes from a phone line)
   {"type": "stop"}            end the conversation
   {"type": "playback_started"}   the speakers just began playing the reply
   {"type": "playback_progress", "played_ms": N}   how much of the reply has been played
@@ -64,6 +64,7 @@ class VoiceSession:
         self.played_ms = 0
         self.last_activity = time.monotonic()
         self.closed = False
+        self.on_phone = False  # a phone line has no Start button: the caller is greeted when the call connects
 
         self._ignore_user_turn = False  # barge-in off: ignore speech that started while the bot talked
         self._quick_end = False  # True while Deepgram uses the quicker settings for a yes/no answer
@@ -188,9 +189,22 @@ class VoiceSession:
         await self.send_audio(sound)
         await self.send_event({"type": "audio_end", "transient": True})  # this is not the end of a reply
 
+    async def _say(self, text):
+        """Speak a fixed sentence of the phone line, for example the greeting. Never raises."""
+        if not text:
+            return
+        try:
+            sound = await self.tts.synthesize(text)
+        except Exception as exc:
+            log.warning("could not make the sound of %r: %s: %s", text, type(exc).__name__, exc)
+            return
+        log.info("said %r", text)
+        await self._play_sound(sound)
+
     async def _on_control(self, message):
         kind = message.get("type")
         if kind == "start":
+            self.on_phone = bool(message.get("phone"))
             await self._start_pipeline()
         elif kind == "stop":
             await self._stop_pipeline()
@@ -239,6 +253,10 @@ class VoiceSession:
         await self.send_event({"type": "ready"})
         self._idle_task = asyncio.create_task(self._idle_watchdog())
         log.info("session ready")
+        if self.on_phone and self.settings.phone_greeting:
+            # only now, while Deepgram already listens, so nothing the caller says after it is lost
+            self.memory.greeting = self.settings.phone_greeting
+            self._spawn(self._say(self.settings.phone_greeting))
 
     # ================================================================ getting ready before Start
     async def _prewarm(self):

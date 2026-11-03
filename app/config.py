@@ -301,6 +301,7 @@ class Settings:
     twilio_auth_token: str  # a secret: only used to validate Twilio signatures
     twilio_phone_number: str
     twilio_public_base_url: str
+    phone_greeting: str  # empty = no greeting
 
 
 def load_settings():
@@ -456,6 +457,7 @@ def load_settings():
         twilio_auth_token=r.optional_text("TWILIO_AUTH_TOKEN"),
         twilio_phone_number=r.optional_text("TWILIO_PHONE_NUMBER"),
         twilio_public_base_url=r.optional_text("TWILIO_PUBLIC_BASE_URL").rstrip("/"),
+        phone_greeting=r.text("PHONE_GREETING"),
     )
 
     # extra sanity checks, only once every value was read without problems
