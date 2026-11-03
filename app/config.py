@@ -75,6 +75,11 @@ class _Reader:
             self.problems.append(f"{name} must be a number or left empty, got {value!r}")
             return None
 
+    def optional_text(self, name):
+        """Blank or missing means that the optional integration is not configured yet."""
+        value = os.getenv(name)
+        return value.strip() if value and value.strip() else ""
+
     def optional_list(self, name, separator="|"):
         """Blank or missing means 'off' (an empty list)."""
         return [part.strip() for part in (os.getenv(name) or "").split(separator) if part.strip()]
@@ -291,6 +296,12 @@ class Settings:
     drain_grace_seconds: float
     slow_event_warning_ms: float
 
+    # Twilio Programmable Voice (optional until credentials and a public URL are provided)
+    twilio_account_sid: str
+    twilio_auth_token: str  # a secret: only used to validate Twilio signatures
+    twilio_phone_number: str
+    twilio_public_base_url: str
+
 
 def load_settings():
     r = _Reader()
@@ -441,6 +452,10 @@ def load_settings():
         idle_timeout_seconds=r.number("IDLE_TIMEOUT_SECONDS"),
         drain_grace_seconds=r.number("DRAIN_GRACE_SECONDS"),
         slow_event_warning_ms=r.number("SLOW_EVENT_WARNING_MS"),
+        twilio_account_sid=r.optional_text("TWILIO_ACCOUNT_SID"),
+        twilio_auth_token=r.optional_text("TWILIO_AUTH_TOKEN"),
+        twilio_phone_number=r.optional_text("TWILIO_PHONE_NUMBER"),
+        twilio_public_base_url=r.optional_text("TWILIO_PUBLIC_BASE_URL").rstrip("/"),
     )
 
     # extra sanity checks, only once every value was read without problems
