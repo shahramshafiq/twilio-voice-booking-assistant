@@ -181,7 +181,7 @@ class VoiceSession:
         log.info("said %r: you went quiet and Deepgram has not finished the turn yet (it is %s ms behind)", phrase,
                  self.stt.behind_ms if self.stt else "?")
         await self.send_audio(sound)
-        await self.send_event({"type": "audio_end"})  # the player plays it, finishes, and starts fresh for the answer
+        await self.send_event({"type": "audio_end", "transient": True})  # this acknowledgement is not the end of a reply
 
     async def _on_control(self, message):
         kind = message.get("type")
