@@ -8,7 +8,7 @@ A voice receptionist that books, looks up, moves and cancels appointments in Goo
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)
 ![OpenAI](https://img.shields.io/badge/OpenAI-gpt--4.1--mini-412991?style=flat-square&logo=openai&logoColor=white)
 ![Google Calendar](https://img.shields.io/badge/Google%20Calendar-API%20v3-4285F4?style=flat-square&logo=googlecalendar&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-147%20passing-brightgreen?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-152%20passing-brightgreen?style=flat-square)
 
 </div>
 
@@ -71,7 +71,7 @@ voice-booking-assistant/
   prompts/               System prompt template
   scripts/               check_calendar.py (free Google Calendar check)
   static/                Web page, audio worklets, styles
-  tests/                 147 tests with fake services
+  tests/                 152 tests with fake services
 ```
 
 ## Getting Started
@@ -113,7 +113,7 @@ The settings you are most likely to change (all names and defaults are in `.env.
 |---|---|---|
 | `GOOGLE_CALENDAR_ID` | (yours) | The one calendar the assistant books into |
 | `GOOGLE_CALENDAR_API_TOKEN` | (yours) | Manually pasted access token, about one hour long |
-| `BUSINESS_NAME` | `TrustCare` | Name used in the greeting and the prompt |
+| `BUSINESS_NAME` | `TrustCare` | Name used in the prompt (the phone greeting has its own text) |
 | `BUSINESS_STAFF_NAME` | `Shahram Shafiq` | The one staff member all appointments are with |
 | `BUSINESS_TIMEZONE` | `Asia/Karachi` | Time zone for every date and time |
 | `BUSINESS_HOURS` | `mon-fri 09:00-17:00;sat 10:00-14:00` | Opening hours per day |
@@ -134,9 +134,13 @@ The settings you are most likely to change (all names and defaults are in `.env.
 | `TWILIO_AUTH_TOKEN` | (yours) | Validates incoming-call and WebSocket signatures, keep it private |
 | `TWILIO_PHONE_NUMBER` | (yours) | Checks the incoming call's `To` number when configured |
 | `TWILIO_PUBLIC_BASE_URL` | (your HTTPS origin) | Public origin used to build the webhook and WSS URLs, for example `https://your-name.ngrok.app` |
+| `PHONE_GREETING` | `Thank you for calling TrustCare. How can I help you today?` | Said as soon as a phone call is listening (empty = no greeting) |
+| `PHONE_GOODBYE` | `I have not heard anything for a while, ...` | Said before a silent phone call is ended |
+| `PHONE_FALLBACK_MESSAGE` | `Sorry, the voice assistant connection ended. ...` | Said by Twilio when the stream ends without a normal hang-up |
+| `TWILIO_API_TIMEOUT_SECONDS` | `10` | Time limit for the request that ends a call |
 | `LISTEN_ACK_PHRASES` | `Okay.\|Alright.` | Said when you have finished but speech recognition is still catching up |
 | `BARGE_IN_ENABLED` | `true` | Whether you can interrupt the assistant (set `false` without headphones) |
-| `IDLE_TIMEOUT_SECONDS` | `180` | Stops listening after this long without speech |
+| `IDLE_TIMEOUT_SECONDS` | `180` | Stops listening after this long without speech (a phone call says goodbye and is ended) |
 
 ### Getting a Google Calendar token
 
@@ -170,13 +174,22 @@ Twilio adds a telephone audio interface to the existing `VoiceSession`. Each cal
 ### Call and audio flow
 
 1. Twilio sends an HTTP `POST` to `/twilio/incoming` when someone calls the configured number. The app validates `X-Twilio-Signature`, checks the configured account and number when those values are set, and returns TwiML.
-2. TwiML is XML that tells Twilio how to handle the call. This app returns `<Connect><Stream>` so the WebSocket is bidirectional, followed by a spoken fallback if the stream closes unexpectedly. `<Start><Stream>` is unidirectional and cannot carry the assistant's reply back to the call.
+2. TwiML is XML that tells Twilio how to handle the call. This app returns `<Connect><Stream>` so the WebSocket is bidirectional, followed by `PHONE_FALLBACK_MESSAGE` and a hang-up, which Twilio reaches only if the stream closes without a normal hang-up. `<Start><Stream>` is unidirectional and cannot carry the assistant's reply back to the call.
 3. Twilio opens `wss://<public-host>/twilio/media-stream`. The handler validates the WebSocket signature, reads `connected` and `start`, and then processes each call's `media`, `mark` and `stop` events.
 4. Incoming media is Base64 mu-law mono at 8 kHz. The app decodes mu-law to signed 16-bit PCM, then uses SoXR to resample 8 kHz audio to the configured Deepgram rate, currently 16 kHz. It sends that PCM to the existing Deepgram Flux stream.
 5. ElevenLabs returns signed 16-bit PCM at the rate in `ELEVENLABS_OUTPUT_FORMAT`, currently 16 kHz. SoXR resamples it to 8 kHz, the app encodes it as mu-law, and sends Base64 media frames to Twilio. The 8 kHz output is sent in frames of up to 160 bytes, or 20 ms of audio.
 6. Twilio `mark` acknowledgements update the session's playback progress. When the caller interrupts, the existing session cancels the reply and sends a Twilio `clear` message to drop queued audio. A `stop` event or disconnect closes the call's speech services and removes its active session.
 
 The codec conversion is required because Twilio uses G.711 mu-law at 8 kHz, while this project uses PCM16 at 16 kHz for both speech services. SoXR performs actual stateful resampling across streamed chunks, rather than changing a sample-rate label. Each call has a separate transport, identifiers and conversation history, so concurrent callers do not share audio or memory.
+
+### Start and end of a call
+
+A phone has no Start button, so the call side does what the buttons do on the web page:
+
+- **Greeting:** the conversation starts as soon as the stream starts. Once Deepgram is listening, the assistant says `PHONE_GREETING`, so nothing the caller says after it is lost. The greeting is also added to the session state the model sees, so it does not greet the caller a second time.
+- **Silence:** after `IDLE_TIMEOUT_SECONDS` without speech the assistant says `PHONE_GOODBYE` and the app sends a Twilio `mark` named `hang-up` right after it. Twilio returns that mark once the goodbye has been played, and the app then ends the call through the Twilio REST API (`POST /2010-04-01/Accounts/<AccountSid>/Calls/<CallSid>.json` with `Status=completed`), using the Account SID from the stream's `start` message and the Auth Token. If that request fails, the app closes the stream instead, so Twilio says `PHONE_FALLBACK_MESSAGE` and hangs up.
+- **Errors:** if the conversation stops by itself (for example speech recognition is lost, or the start fails), the app closes the stream, so Twilio says `PHONE_FALLBACK_MESSAGE` and hangs up instead of leaving a silent line.
+- **Interruptions:** after a `clear`, late audio from the interrupted reply is dropped until the caller's next turn, but the short "Okay." acknowledgement still plays.
 
 ### Configure credentials
 
@@ -223,8 +236,9 @@ After credentials and the phone number are available:
 
 1. Confirm `.env` has all four Twilio values and the existing OpenAI, Deepgram, ElevenLabs and Calendar settings.
 2. Start the FastAPI app and the HTTPS tunnel, then set the phone number's voice webhook to `https://<public-host>/twilio/incoming` with `POST`.
-3. Call the Twilio number and check the app log for the call and stream identifiers. Confirm speech is recognized, the assistant replies, and booking changes still require confirmation.
+3. Call the Twilio number. You should hear `PHONE_GREETING`. Check the app log for the call and stream identifiers. Confirm speech is recognized, the assistant replies, and booking changes still require confirmation.
 4. During a reply, speak over the assistant to check that playback is cleared and the new request is heard.
+5. Stay silent for `IDLE_TIMEOUT_SECONDS` (3 minutes by default). You should hear `PHONE_GOODBYE`, then the call ends, and the log shows `hung up call CA...`.
 
 Automated tests use local fakes and do not contact Twilio or make calls. Real call setup, carrier audio quality, signature behavior through the selected tunnel or deployment, and live interruptions have not been verified yet with a real Twilio account and phone number.
 
@@ -319,7 +333,7 @@ When the page opens, the app makes the sound of the short "Okay." and "Alright."
 python -m pytest
 ```
 
-The 147 tests use fake Twilio messages, a fake Google Calendar, fake Deepgram and ElevenLabs connections and a scripted model, so they need no service keys and make no paid calls. They cover TwiML, webhook signatures, audio conversion, stream events, call isolation, cleanup, date parsing, booking rules, guardrails and whole conversations.
+The 152 tests use fake Twilio messages, a fake Google Calendar, fake Deepgram and ElevenLabs connections and a scripted model, so they need no service keys and make no paid calls. They cover TwiML, webhook signatures, audio conversion, stream events, the phone greeting, goodbye and hang-up, call isolation, cleanup, date parsing, booking rules, guardrails and whole conversations.
 
 ## Limitations and Roadmap
 
