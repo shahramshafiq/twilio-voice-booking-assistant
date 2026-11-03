@@ -67,7 +67,8 @@ def build_twiml(stream_url):
     """Return TwiML that opens a bidirectional stream and has a fallback if it closes early."""
     response = VoiceResponse()
     response.connect().stream(url=stream_url)
-    response.say("Sorry, the voice assistant connection ended. Please try your call again.")
+    if settings.phone_fallback_message:
+        response.say(settings.phone_fallback_message)
     response.hangup()
     return str(response)
 

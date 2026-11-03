@@ -304,6 +304,7 @@ class Settings:
     phone_greeting: str  # empty = no greeting
     phone_goodbye: str  # said before a silent phone call is ended
     twilio_api_timeout_seconds: float
+    phone_fallback_message: str  # said by Twilio when the stream ends without a normal hang-up
 
 
 def load_settings():
@@ -462,6 +463,7 @@ def load_settings():
         phone_greeting=r.text("PHONE_GREETING"),
         phone_goodbye=r.text("PHONE_GOODBYE"),
         twilio_api_timeout_seconds=r.number("TWILIO_API_TIMEOUT_SECONDS"),
+        phone_fallback_message=r.text("PHONE_FALLBACK_MESSAGE"),
     )
 
     # extra sanity checks, only once every value was read without problems

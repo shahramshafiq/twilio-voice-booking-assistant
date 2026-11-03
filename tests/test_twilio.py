@@ -60,7 +60,7 @@ def test_twiml_uses_a_bidirectional_stream_and_a_fallback():
     stream = xml.find("./Connect/Stream")
     assert stream is not None
     assert stream.get("url") == "wss://voice.example.test/twilio/media-stream"
-    assert xml.find("./Say") is not None
+    assert xml.find("./Say").text == settings.phone_fallback_message
     assert xml.find("./Hangup") is not None
 
 
