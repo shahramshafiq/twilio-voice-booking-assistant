@@ -621,8 +621,8 @@ class VoiceSession:
                 await self._set_state("listening")
                 return
             # all audio was generated; tell the browser no more is coming and wait for it to finish playing
-            await self.send_event({"type": "audio_end"})
             self.awaiting_drain = True
+            await self.send_event({"type": "audio_end"})
             wait = turn.audio_ms / 1000 + self.settings.drain_grace_seconds
             self._drain_task = asyncio.create_task(self._drain_watchdog(turn, wait))
 
