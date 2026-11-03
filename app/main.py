@@ -16,6 +16,7 @@ from .guardrails.output_rail import OutputRail
 from .llm import LLMClient
 from .logging_setup import setup_logging
 from .session import VoiceSession
+from .twilio import router as twilio_router
 
 setup_logging(settings.log_level)
 log = logging.getLogger("main")
@@ -48,6 +49,7 @@ async def lifespan(app):
 
 app = FastAPI(lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.include_router(twilio_router)
 
 
 @app.get("/")
