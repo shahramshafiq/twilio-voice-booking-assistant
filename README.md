@@ -1,11 +1,11 @@
 <div align="center">
 
-# Voice Booking Assistant
+# Twilio Voice Booking Assistant
 
-A voice receptionist that books, looks up, moves and cancels appointments in Google Calendar, built for low latency.
+A voice receptionist you can phone or talk to in the browser. It books, looks up, moves and cancels appointments in Google Calendar, built for low latency.
 
 ![Python](https://img.shields.io/badge/Python-3.14-3776AB?style=flat-square&logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)
+![Twilio](https://img.shields.io/badge/Twilio-Media%20Streams-F22F46?style=flat-square&logo=twilio&logoColor=white)
 ![OpenAI](https://img.shields.io/badge/OpenAI-gpt--4.1--mini-412991?style=flat-square&logo=openai&logoColor=white)
 ![Google Calendar](https://img.shields.io/badge/Google%20Calendar-API%20v3-4285F4?style=flat-square&logo=googlecalendar&logoColor=white)
 ![Tests](https://img.shields.io/badge/tests-152%20passing-brightgreen?style=flat-square)
@@ -14,7 +14,9 @@ A voice receptionist that books, looks up, moves and cancels appointments in Goo
 
 ## Overview
 
-You open a web page, press Start and talk. The assistant listens, decides what you need, checks one Google Calendar through a set of tools, offers free times, and only changes the calendar after you say yes to a read-back of the exact details. Speech goes in through Deepgram, the reply is written by an OpenAI model that can call tools, and ElevenLabs speaks it, with the work overlapped so the first sound starts as early as possible.
+You call a phone number, or open a web page and press Start, and talk. The assistant listens, decides what you need, checks one Google Calendar through a set of tools, offers free times, and only changes the calendar after you say yes to a read-back of the exact details. Speech goes in through Deepgram, the reply is written by an OpenAI model that can call tools, and ElevenLabs speaks it, with the work overlapped so the first sound starts as early as possible.
+
+Phone calls come in through Twilio and enter the same conversation code as the browser, so the booking rules, the confirmation step and the guardrails are the same on both. A separate version built on one Gemini Live connection, browser only, is in [gemini-live-booking-assistant](https://github.com/shahramshafiq/gemini-live-booking-assistant).
 
 ## Key Features
 
@@ -30,7 +32,7 @@ You open a web page, press Start and talk. The assistant listens, decides what y
 - **Short-term memory:** the conversation plus a state block written by the code (name, phone, offered times, looked-up booking, pending question). It is rebuilt empty on every call.
 - **Honest failures:** an expired or invalid calendar token shows a clear warning and the assistant says it cannot reach the calendar, instead of pretending to book.
 - **Natural voice behavior:** barge-in (interrupt it while it talks, while a short "yeah" or "okay" does not cut it off), short filler phrases while a slow tool works that flow into the answer, a quick "Okay." when you have finished but speech recognition is still catching up, and replies cleaned for speech.
-- **Twilio phone calls:** incoming calls use a signed webhook and a bidirectional Media Stream, then enter the same STT, LLM, TTS and booking session used by the browser.
+- **Twilio phone calls:** incoming calls use a signed webhook and a bidirectional Media Stream, then enter the same STT, LLM, TTS and booking session used by the browser. The caller is greeted as soon as the assistant is listening, a silent call ends with a spoken goodbye, and an error ends the call with a short apology instead of a silent line.
 
 ## Tech Stack
 
@@ -44,17 +46,17 @@ You open a web page, press Start and talk. The assistant listens, decides what y
 | Calendar | Google Calendar API v3 over httpx |
 | Validation | Pydantic |
 | Browser audio | AudioWorklet (microphone and player) |
-| Telephone audio | Twilio Programmable Voice, bidirectional Media Streams |
+| Telephone audio | Twilio Programmable Voice, bidirectional Media Streams, SoXR and NumPy for audio conversion |
 | Testing | pytest |
 
 ## Project Structure
 
 ```text
-voice-booking-assistant/
+twilio-voice-booking-assistant/
   app/
     main.py              FastAPI app, page, health check and the voice WebSocket
     config.py            Reads and validates every setting from .env
-    session.py           One browser call: events, drafts, turns, barge-in
+    session.py           One conversation: events, drafts, turns, barge-in
     turn.py              One spoken reply: guardrail, phrases, voice, filler
     agent.py             The loop: ask the model, run tools, ask again
     llm.py               OpenAI streaming client (kept warm)
@@ -65,6 +67,7 @@ voice-booking-assistant/
     twilio_audio.py      mu-law codec and streaming sample-rate conversion
     chunker.py           Cuts the reply into phrases for the voice
     timing.py            Per-reply latency stopwatch
+    logging_setup.py     Log format
     booking/             Scheduling rules and the eight tools
     guardrails/          Input and output guardrails
   data/services.json     The services offered
@@ -82,12 +85,13 @@ voice-booking-assistant/
 - API keys for OpenAI, Deepgram and ElevenLabs
 - A Google Calendar (a separate test calendar is recommended) and its Calendar ID
 - A modern desktop browser and a microphone (headphones recommended)
+- For phone calls only: a Twilio account with a phone number, and a public HTTPS address (for local use, a tunnel such as ngrok)
 
 ### Installation
 
 ```bash
-git clone https://github.com/shahramshafiq/voice-booking-assistant.git
-cd voice-booking-assistant
+git clone https://github.com/shahramshafiq/twilio-voice-booking-assistant.git
+cd twilio-voice-booking-assistant
 py -3.14 -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
@@ -103,7 +107,7 @@ GOOGLE_CALENDAR_API_TOKEN=
 GOOGLE_CALENDAR_ID=
 ```
 
-That is all `.env` needs. Every other setting is read from `.env.example`, where each one is explained in a comment. A value you put in `.env` wins over the one in `.env.example`, so copy a line into `.env` only when you want to change it.
+That is all `.env` needs for the browser. Phone calls need four more values, listed under [Configure credentials](#configure-credentials). Every other setting is read from `.env.example`, where each one is explained in a comment. A value you put in `.env` wins over the one in `.env.example`, so copy a line into `.env` only when you want to change it.
 
 ### Environment Variables
 
@@ -169,7 +173,7 @@ Open http://127.0.0.1:8000, press Start conversation and allow the microphone.
 
 ## Twilio phone calls
 
-Twilio adds a telephone audio interface to the existing `VoiceSession`. Each call gets its own Deepgram stream, ElevenLabs session, playback state and `SessionMemory`; the LLM client and booking service are shared in the same way they are for browser sessions. The existing booking rules and confirmation flow remain the same.
+There is no Twilio program to install: Twilio is a hosted service, and its Python library is in `requirements.txt`. It adds a telephone audio interface to the existing `VoiceSession`. Each call gets its own Deepgram stream, ElevenLabs session, playback state and `SessionMemory`; the LLM client and booking service are shared in the same way they are for browser sessions. The existing booking rules and confirmation flow remain the same.
 
 ### Call and audio flow
 
@@ -193,7 +197,7 @@ A phone has no Start button, so the call side does what the buttons do on the we
 
 ### Configure credentials
 
-Add these values to `.env` once you have them. Keep `.env` private and do not commit it.
+Add these values to `.env` once you have them. The Account SID and Auth Token are on the Twilio Console home page. They are used by the app, not to sign in to the website. Keep `.env` private and do not commit it.
 
 ```dotenv
 TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
@@ -212,11 +216,11 @@ Twilio needs a publicly reachable HTTPS webhook and WSS connection. With the app
 ngrok http 8000
 ```
 
-Copy the HTTPS origin shown by the tunnel into `TWILIO_PUBLIC_BASE_URL`, restart the app, and use that same origin in the Twilio Console. The tunnel must forward WebSocket upgrades as well as HTTP requests. Do not put the webhook path into `TWILIO_PUBLIC_BASE_URL`.
+Copy the HTTPS origin shown by the tunnel into `TWILIO_PUBLIC_BASE_URL`, restart the app, and use that same origin in the Twilio Console. On the free ngrok plan the address stays the same when the tunnel restarts. The tunnel must forward WebSocket upgrades as well as HTTP requests. Do not put the webhook path into `TWILIO_PUBLIC_BASE_URL`.
 
 ### Configure the Twilio number
 
-In the current Twilio Console, open **Numbers & senders**, choose the phone number, open **Configuration details**, and edit **Voice and emergency address**. Set the primary voice handler to **Use Webhooks**, choose **Webhook**, enter the URL below, select **HTTP POST**, and save:
+In the Twilio Console, open the phone number's voice settings. For incoming calls choose a webhook, enter the URL below, select **HTTP POST**, and save:
 
 ```text
 https://<public-host>/twilio/incoming
@@ -229,6 +233,8 @@ wss://<public-host>/twilio/media-stream
 ```
 
 You do not enter the WebSocket URL separately in the Console. The webhook builds it from `TWILIO_PUBLIC_BASE_URL`.
+
+On a Twilio trial account, calls to the number must come from a verified phone number, a short trial message plays before the assistant starts, and a call is limited to 10 minutes.
 
 ### Test with the phone number
 
@@ -341,7 +347,7 @@ The 152 tests use fake Twilio messages, a fake Google Calendar, fake Deepgram an
 - Searches use calendar data that is at most about 30 seconds old. The final check before any change is always live.
 - One staff member and one calendar. Locks and the race guard work inside one server process.
 - The guardrails are rule based. They catch common attacks but are not a language-model judge.
-- Speech recognition is configured for English. Browser use is available locally; real phone calls still need Twilio credentials, a public HTTPS/WSS host and a configured number.
+- Speech recognition is configured for English. Browser calls have been tested live. The phone path has only been tested against fake Twilio messages so far, and it needs Twilio credentials, a public HTTPS/WSS host and a configured number.
 - A long pause in the middle of a sentence can end your turn early. When you go on talking the assistant stops at once and takes the rest of the sentence, so nothing is lost, but it costs a model call.
 - Spelled letters are often misheard by speech recognition. The read-back before every booking is where a wrong name gets caught.
 
