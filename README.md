@@ -229,6 +229,8 @@ wss://<public-host>/twilio/media-stream
 
 You do not enter the WebSocket URL separately in the Console. The webhook builds it from `TWILIO_PUBLIC_BASE_URL`.
 
+The voice webhook can also be set without the Console, through the `voice_url` and `voice_method` fields of the number in the Twilio REST API. Note the old value first if the number is shared, so it can be put back.
+
 On a Twilio trial account, calls to the number must come from a verified phone number, a short trial message plays before the assistant starts, and a call is limited to 10 minutes.
 
 ### Test with the phone number
@@ -237,11 +239,25 @@ After credentials and the phone number are available:
 
 1. Confirm `.env` has all four Twilio values and the existing OpenAI, Deepgram, ElevenLabs and Calendar settings.
 2. Start the FastAPI app and the HTTPS tunnel, then set the phone number's voice webhook to `https://<public-host>/twilio/incoming` with `POST`.
-3. Call the Twilio number. You should hear `PHONE_GREETING`. Check the app log for the call and stream identifiers. Confirm speech is recognized, the assistant replies, and booking changes still require confirmation.
+3. Call the Twilio number from any phone, or from a browser phone built on the Twilio Voice SDK. If it lets you choose a caller ID, choose a different number from the one being called. You should hear `PHONE_GREETING`. Check the app log for the call and stream identifiers. Confirm speech is recognized, the assistant replies, and booking changes still require confirmation.
 4. During a reply, speak over the assistant to check that playback is cleared and the new request is heard.
 5. Stay silent for `IDLE_TIMEOUT_SECONDS` (3 minutes by default). You should hear `PHONE_GOODBYE`, then the call ends, and the log shows `hung up call CA...`.
 
-Automated tests use local fakes and do not contact Twilio or make calls. Real call setup, carrier audio quality, signature behavior through the selected tunnel or deployment, and live interruptions have not been verified yet with a real Twilio account and phone number.
+### What has been tested
+
+Automated tests use local fakes and do not contact Twilio or make calls.
+
+One real incoming call has been made on a paid Twilio account, through an ngrok tunnel, from a browser phone. It lasted 152 seconds and ended with a booking that appeared in Google Calendar.
+
+| Checked on the real call | Result |
+|---|---|
+| Webhook signature and WebSocket connection | Worked |
+| Greeting, speech recognition and tool calls | Worked. One word came through wrong and the assistant asked again |
+| Read-back before the booking | Worked. A yes given before the question had finished did not count, so it was asked again |
+| Speaking over the assistant | Worked. Playback stopped and the new request was heard |
+| End of speech to first reply audio sent to Twilio | 0.9 to 2.3 s after the first reply, 5.0 s on the first reply. The delay from Twilio to the ear is not included |
+
+Not tested on a real call yet: moving and cancelling by phone, the silence hang-up, the fallback sentence, a call from a mobile phone, and several calls at once.
 
 ## Usage
 
@@ -252,7 +268,7 @@ Try a full conversation:
 3. The assistant reads back the details and asks to confirm. Say "yes".
 4. It books the slot and says a booking reference. Use the reference and the same phone number to look up, move or cancel the booking.
 
-The page shows the live transcript, the tools that were used and a latency table for every reply.
+The page shows the live transcript, the tools that were used and a latency table for every reply. On a phone call the same conversation runs, and the transcript, tool results and latency for each reply are written to the app log instead.
 
 ### Example conversations
 
