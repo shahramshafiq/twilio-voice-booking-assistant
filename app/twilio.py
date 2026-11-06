@@ -63,10 +63,12 @@ def _valid_signature(auth_token, signature, url, parameters, websocket=False):
     return any(validator.validate(candidate, parameters, signature) for candidate in candidates)
 
 
-def build_twiml(stream_url):
+def build_twiml(stream_url, outbound=False):
     """Return TwiML that opens a bidirectional stream and has a fallback if it closes early."""
     response = VoiceResponse()
-    response.connect().stream(url=stream_url)
+    stream = response.connect().stream(url=stream_url)
+    if outbound:
+        stream.parameter(name="direction", value="outbound")  # returned in the stream's start message
     if settings.phone_fallback_message:
         response.say(settings.phone_fallback_message)
     response.hangup()
@@ -318,7 +320,7 @@ async def incoming_call(request: Request):
         raise HTTPException(status_code=403, detail="The Twilio number does not match configuration.")
 
     stream_url = _signature_url(origin, "/twilio/media-stream", websocket=True)
-    return Response(content=build_twiml(stream_url), media_type="application/xml")
+    return Response(content=build_twiml(stream_url, outbound), media_type="application/xml")
 
 
 @router.websocket("/twilio/media-stream")
@@ -373,7 +375,10 @@ async def media_stream(websocket: WebSocket):
         )
         active_calls[call_sid] = session
         session_task = asyncio.create_task(session.run())
-        transport.offer_control({"type": "start", "phone": True})
+        start_control = {"type": "start", "phone": True}
+        if (start_event["start"].get("customParameters") or {}).get("direction") == "outbound":
+            start_control["outbound"] = True
+        transport.offer_control(start_control)
         log.info("Twilio call %s stream %s connected", call_sid, stream_sid)
 
         while not session_task.done():

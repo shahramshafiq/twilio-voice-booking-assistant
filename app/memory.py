@@ -41,6 +41,7 @@ class SessionMemory:
         self.recent_actions = []
         self.calendar_problem = None  # set when the calendar could not be reached at the start
         self.greeting = None  # what the caller heard when a phone call was answered
+        self.outbound = False  # the assistant placed this call
 
     # ---------------------------------------------------------------- the conversation
     def add_exchange(self, user_text, assistant_text):
@@ -103,6 +104,8 @@ class SessionMemory:
             lines.append(f"Calendar: NOT REACHABLE ({self.calendar_problem}). Tell the caller you cannot use the calendar right now.")
         if self.greeting:
             lines.append(f"Already said to the caller when the call was answered: {self.greeting}")
+        if self.outbound:
+            lines.append("We phoned this customer, they did not call us, so never thank them for calling.")
         if self.customer_name or self.customer_phone:
             lines.append(f"Customer so far: name {self.customer_name or 'unknown'}, phone {self.customer_phone or 'unknown'}.")
         if self.service_name:
