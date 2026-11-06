@@ -302,7 +302,6 @@ class Settings:
     twilio_phone_number: str
     twilio_public_base_url: str
     phone_greeting: str  # empty = no greeting
-    phone_outbound_greeting: str  # said instead when the assistant placed the call; empty = no greeting
     phone_goodbye: str  # said before a silent phone call is ended
     twilio_api_timeout_seconds: float
     phone_fallback_message: str  # said by Twilio when the stream ends without a normal hang-up
@@ -462,7 +461,6 @@ def load_settings():
         twilio_phone_number=r.optional_text("TWILIO_PHONE_NUMBER"),
         twilio_public_base_url=r.optional_text("TWILIO_PUBLIC_BASE_URL").rstrip("/"),
         phone_greeting=r.text("PHONE_GREETING"),
-        phone_outbound_greeting=r.text("PHONE_OUTBOUND_GREETING"),
         phone_goodbye=r.text("PHONE_GOODBYE"),
         twilio_api_timeout_seconds=r.number("TWILIO_API_TIMEOUT_SECONDS"),
         phone_fallback_message=r.text("PHONE_FALLBACK_MESSAGE"),

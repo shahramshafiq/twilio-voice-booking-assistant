@@ -65,7 +65,6 @@ class VoiceSession:
         self.last_activity = time.monotonic()
         self.closed = False
         self.on_phone = False  # a phone line has no Start button: the caller is greeted when the call connects
-        self.outbound = False  # the assistant placed this phone call
 
         self._ignore_user_turn = False  # barge-in off: ignore speech that started while the bot talked
         self._quick_end = False  # True while Deepgram uses the quicker settings for a yes/no answer
@@ -206,7 +205,6 @@ class VoiceSession:
         kind = message.get("type")
         if kind == "start":
             self.on_phone = bool(message.get("phone"))
-            self.outbound = bool(message.get("outbound"))
             await self._start_pipeline()
         elif kind == "stop":
             await self._stop_pipeline()
@@ -255,12 +253,10 @@ class VoiceSession:
         await self.send_event({"type": "ready"})
         self._idle_task = asyncio.create_task(self._idle_watchdog())
         log.info("session ready")
-        self.memory.outbound = self.outbound
-        greeting = self.settings.phone_outbound_greeting if self.outbound else self.settings.phone_greeting
-        if self.on_phone and greeting:
+        if self.on_phone and self.settings.phone_greeting:
             # only now, while Deepgram already listens, so nothing the caller says after it is lost
-            self.memory.greeting = greeting
-            self._spawn(self._say(greeting))
+            self.memory.greeting = self.settings.phone_greeting
+            self._spawn(self._say(self.settings.phone_greeting))
 
     # ================================================================ getting ready before Start
     async def _prewarm(self):

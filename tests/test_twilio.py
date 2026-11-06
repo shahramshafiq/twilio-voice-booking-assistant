@@ -236,39 +236,6 @@ def test_a_phone_call_is_greeted_as_soon_as_it_listens_and_the_browser_is_not(mo
     run(scenario())
 
 
-def test_a_call_we_placed_gets_its_own_greeting_and_the_model_knows(monkeypatch):
-    async def scenario():
-        bench = Bench(monkeypatch, ScriptedLLM())
-        await bench.session._on_control({"type": "start", "phone": True, "outbound": True})
-        await asyncio.sleep(0.05)
-        assert bench.socket.audio
-        state = bench.session.memory.render_state(NOW, settings.business_timezone)
-        assert settings.phone_outbound_greeting in state and settings.phone_greeting not in state
-        assert "We phoned this customer" in state
-        await bench.stop()
-
-    run(scenario())
-
-
-def test_the_outbound_mark_travels_from_the_webhook_to_the_session(monkeypatch):
-    assert ET.fromstring(build_twiml("wss://voice.example.test/s")).find("./Connect/Stream/Parameter") is None
-    parameter = ET.fromstring(build_twiml("wss://voice.example.test/s", outbound=True)).find("./Connect/Stream/Parameter")
-    assert (parameter.get("name"), parameter.get("value")) == ("direction", "outbound")
-
-    monkeypatch.setattr(twilio_module, "settings", twilio_settings())
-    monkeypatch.setattr(twilio_module, "_valid_signature", lambda *args, **kwargs: True)
-    monkeypatch.setattr(twilio_module, "VoiceSession", SessionProbe)
-    SessionProbe.instances.clear()
-    start = _start_event("CA111", "MZ111")
-    start["start"]["customParameters"] = {"direction": "outbound"}
-    with TestClient(make_app()) as client:
-        with client.websocket_connect("/twilio/media-stream", headers={"x-twilio-signature": "test"}) as stream:
-            stream.send_json({"event": "connected", "protocol": "Call", "version": "1.0.0"})
-            stream.send_json(start)
-            stream.send_json({"event": "stop", "streamSid": "MZ111"})
-    assert json.loads(SessionProbe.instances[0].messages[0]["text"]) == {"type": "start", "phone": True, "outbound": True}
-
-
 def test_a_silent_phone_call_says_goodbye_and_is_not_stopped_under_it(monkeypatch):
     real_sleep = asyncio.sleep
     # the idle watchdog looks every 5 s; here it looks at once
