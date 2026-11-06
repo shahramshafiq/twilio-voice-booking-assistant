@@ -354,13 +354,10 @@ The 152 tests use fake Twilio messages, a fake Google Calendar, fake Deepgram an
 
 ## Limitations and Roadmap
 
-- The Google token is pasted by hand and expires after about an hour.
-- Searches use calendar data that is at most about 30 seconds old. The final check before any change is always live.
-- One staff member and one calendar. Locks and the race guard work inside one server process.
-- The guardrails are rule based. They catch common attacks but are not a language-model judge.
-- Speech recognition is configured for English. Browser calls have been tested live. The phone path has only been tested against fake Twilio messages so far, and it needs Twilio credentials, a public HTTPS/WSS host and a configured number.
-- A long pause in the middle of a sentence can end your turn early. When you go on talking the assistant stops at once and takes the rest of the sentence, so nothing is lost, but it costs a model call.
-- Spelled letters are often misheard by speech recognition. The read-back before every booking is where a wrong name gets caught.
+- **Calendar:** the Google token is pasted by hand and expires after about an hour. Searches use calendar data that is at most about 30 seconds old, and the final check before any change is always live. There is one staff member and one calendar, and locks and the race guard work inside one server process.
+- **Phone:** calls are incoming only, and the assistant does not hang up by itself after the caller says goodbye. Running locally, the number reaches the assistant only while the app and the tunnel are running. See [What has been tested](#what-has-been-tested) for what one real call has and has not covered.
+- **Speech:** recognition is configured for English. A long pause in the middle of a sentence can end your turn early. When you go on talking the assistant stops at once and takes the rest of the sentence, so nothing is lost, but it costs a model call. Spelled letters are often misheard, and the read-back before every booking is where a wrong name gets caught.
+- **Guardrails:** they are rule based. They catch common attacks but are not a language-model judge.
 
 ## Author
 
