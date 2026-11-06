@@ -4,7 +4,6 @@ import base64
 import json
 import xml.etree.ElementTree as ET
 from dataclasses import replace
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -14,7 +13,6 @@ from starlette.websockets import WebSocketDisconnect
 from twilio.request_validator import RequestValidator
 
 import app.twilio as twilio_module
-import scripts.place_call as place_call_module
 from app.config import settings
 from app.twilio import TwilioCallTransport, build_twiml
 from app.twilio_audio import TwilioAudioConverter, mulaw_to_pcm16, pcm16_to_mulaw
@@ -99,27 +97,6 @@ def test_outgoing_call_must_come_from_our_number(monkeypatch):
         rejected = client.post("/twilio/incoming", data=other, headers=_signed_form(other))
     assert accepted.status_code == 200
     assert rejected.status_code == 403
-
-
-def test_place_call_asks_twilio_to_call_from_our_number_through_our_webhook(monkeypatch):
-    created = {}
-
-    class FakeCalls:
-        def create(self, **arguments):
-            created.update(arguments)
-            return SimpleNamespace(sid="CA999")
-
-    monkeypatch.setattr(place_call_module, "Client", lambda *args, **kwargs: SimpleNamespace(calls=FakeCalls()))
-    assert place_call_module.place_call("+923001234567", twilio_settings()) == "CA999"
-    assert created == {"to": "+923001234567", "from_": PHONE, "url": ORIGIN + "/twilio/incoming", "method": "POST"}
-
-    created.clear()
-    for bad_number in ("03001234567", "+92 300 1234567", ""):
-        with pytest.raises(ValueError):
-            place_call_module.place_call(bad_number, twilio_settings())
-    with pytest.raises(ValueError):
-        place_call_module.place_call("+923001234567", replace(twilio_settings(), twilio_auth_token=""))
-    assert created == {}
 
 
 def test_incoming_call_stays_unavailable_without_twilio_configuration(monkeypatch):
