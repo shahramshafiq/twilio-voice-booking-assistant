@@ -72,9 +72,9 @@ twilio-voice-booking-assistant/
     guardrails/          Input and output guardrails
   data/services.json     The services offered
   prompts/               System prompt template
-  scripts/               check_calendar.py (free Google Calendar check), place_call.py (the assistant phones a number)
+  scripts/               check_calendar.py (free Google Calendar check)
   static/                Web page, audio worklets, styles
-  tests/                 156 tests with fake services
+  tests/                 152 tests with fake services
 ```
 
 ## Getting Started
@@ -139,7 +139,6 @@ The settings you are most likely to change (all names and defaults are in `.env.
 | `TWILIO_PHONE_NUMBER` | (yours) | Checks the incoming call's `To` number when configured |
 | `TWILIO_PUBLIC_BASE_URL` | (your HTTPS origin) | Public origin used to build the webhook and WSS URLs, for example `https://your-name.ngrok.app` |
 | `PHONE_GREETING` | `Thank you for calling TrustCare. How can I help you today?` | Said as soon as a phone call is listening (empty = no greeting) |
-| `PHONE_OUTBOUND_GREETING` | `Hello, this is the TrustCare appointment assistant. How can I help you today?` | Said instead of `PHONE_GREETING` when the assistant placed the call (empty = no greeting) |
 | `PHONE_GOODBYE` | `I have not heard anything for a while, ...` | Said before a silent phone call is ended |
 | `PHONE_FALLBACK_MESSAGE` | `Sorry, the voice assistant connection ended. ...` | Said by Twilio when the stream ends without a normal hang-up |
 | `TWILIO_API_TIMEOUT_SECONDS` | `10` | Time limit for the request that ends a call |
@@ -178,7 +177,7 @@ There is no Twilio program to install: Twilio is a hosted service, and its Pytho
 
 ### Call and audio flow
 
-1. Twilio sends an HTTP `POST` to `/twilio/incoming` when someone calls the configured number, or when the person the assistant phoned answers. The app validates `X-Twilio-Signature`, checks the configured account and number when those values are set (the `To` side of an incoming call, the `From` side of an outgoing one), and returns TwiML.
+1. Twilio sends an HTTP `POST` to `/twilio/incoming` when someone calls the configured number. The app validates `X-Twilio-Signature`, checks the configured account and number when those values are set, and returns TwiML.
 2. TwiML is XML that tells Twilio how to handle the call. This app returns `<Connect><Stream>` so the WebSocket is bidirectional, followed by `PHONE_FALLBACK_MESSAGE` and a hang-up, which Twilio reaches only if the stream closes without a normal hang-up. `<Start><Stream>` is unidirectional and cannot carry the assistant's reply back to the call.
 3. Twilio opens `wss://<public-host>/twilio/media-stream`. The handler validates the WebSocket signature, reads `connected` and `start`, and then processes each call's `media`, `mark` and `stop` events.
 4. Incoming media is Base64 mu-law mono at 8 kHz. The app decodes mu-law to signed 16-bit PCM, then uses SoXR to resample 8 kHz audio to the configured Deepgram rate, currently 16 kHz. It sends that PCM to the existing Deepgram Flux stream.
@@ -247,19 +246,7 @@ After credentials and the phone number are available:
 4. During a reply, speak over the assistant to check that playback is cleared and the new request is heard.
 5. Stay silent for `IDLE_TIMEOUT_SECONDS` (3 minutes by default). You should hear `PHONE_GOODBYE`, then the call ends, and the log shows `hung up call CA...`.
 
-### Have the assistant phone someone
-
-With the app and the tunnel running, give the number in international format:
-
-```bash
-python -m scripts.place_call +923001234567
-```
-
-The call comes from `TWILIO_PHONE_NUMBER`. Twilio rings the number, and when the person answers it asks `/twilio/incoming` what to do, so the conversation runs exactly as it does on an incoming call, starting with `PHONE_OUTBOUND_GREETING`. The account must allow calls to that country (Voice Geographic Permissions), and a trial account can only call verified numbers. There is no voicemail detection: if voicemail answers, the assistant talks to it until the silence timeout ends the call.
-
-### What has been tested
-
-Automated tests use local fakes and do not contact Twilio or make calls. One real incoming call has been made on a paid Twilio account through an ngrok tunnel, from a browser phone rather than a mobile network: signature checks, the greeting, speech recognition, interruptions and a booking in Google Calendar all worked. Moving and cancelling by phone, the silence hang-up, the fallback sentence and outgoing calls have not been tested on a real call yet.
+Automated tests use local fakes and do not contact Twilio or make calls. Real call setup, carrier audio quality, signature behavior through the selected tunnel or deployment, and live interruptions have not been verified yet with a real Twilio account and phone number.
 
 ## Usage
 
