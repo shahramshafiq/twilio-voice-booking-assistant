@@ -88,6 +88,17 @@ def test_incoming_call_rejects_bad_signature_and_wrong_number(monkeypatch):
     assert wrong_number_response.status_code == 403
 
 
+def test_outgoing_call_must_come_from_our_number(monkeypatch):
+    monkeypatch.setattr(twilio_module, "settings", twilio_settings())
+    ours = {"AccountSid": ACCOUNT_SID, "CallSid": "CA111", "Direction": "outbound-api", "From": PHONE, "To": "+923001234567"}
+    other = {**ours, "From": "+15550000000"}
+    with TestClient(make_app()) as client:
+        accepted = client.post("/twilio/incoming", data=ours, headers=_signed_form(ours))
+        rejected = client.post("/twilio/incoming", data=other, headers=_signed_form(other))
+    assert accepted.status_code == 200
+    assert rejected.status_code == 403
+
+
 def test_incoming_call_stays_unavailable_without_twilio_configuration(monkeypatch):
     unconfigured = replace(
         twilio_settings(),
