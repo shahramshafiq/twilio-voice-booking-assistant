@@ -312,10 +312,8 @@ async def incoming_call(request: Request):
         raise HTTPException(status_code=403, detail="The Twilio account does not match configuration.")
     if not parameters.get("CallSid") or not parameters.get("To"):
         raise HTTPException(status_code=400, detail="The Twilio call request is missing required fields.")
-    outbound = parameters.get("Direction", "").startswith("outbound")
-    our_number = parameters.get("From") if outbound else parameters.get("To")  # the other side is the person on the line
-    if settings.twilio_phone_number and our_number != settings.twilio_phone_number:
-        raise HTTPException(status_code=403, detail="The Twilio number does not match configuration.")
+    if settings.twilio_phone_number and parameters.get("To") != settings.twilio_phone_number:
+        raise HTTPException(status_code=403, detail="The called number does not match configuration.")
 
     stream_url = _signature_url(origin, "/twilio/media-stream", websocket=True)
     return Response(content=build_twiml(stream_url), media_type="application/xml")
